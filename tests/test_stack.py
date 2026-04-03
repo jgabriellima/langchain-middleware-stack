@@ -65,6 +65,29 @@ class TestResolution:
         stack = MiddlewareStack()
         assert stack.add(_make("x")) is stack
 
+    def test_add_accepts_list_same_as_sequential(self):
+        a, b, c = _make("a", before=("b",)), _make("b", after=("a",), before=("c",)), _make("c", after=("b",))
+        left = MiddlewareStack()
+        left.add(a).add(b).add(c)
+        right = MiddlewareStack()
+        right.add([a, b, c])
+        assert left.resolve() == right.resolve() == [a, b, c]
+
+    def test_add_accepts_varargs(self):
+        a, b = _make("a", before=("b",)), _make("b", after=("a",))
+        stack = MiddlewareStack()
+        stack.add(a, b)
+        assert stack.resolve() == [a, b]
+
+    def test_add_empty_list_noop(self):
+        stack = MiddlewareStack()
+        stack.add([])
+        assert len(stack) == 0
+
+    def test_add_without_arguments_raises(self):
+        with pytest.raises(TypeError, match="at least one argument"):
+            MiddlewareStack().add()
+
     def test_len(self):
         stack = MiddlewareStack()
         stack.add(_make("a")).add(_make("b"))

@@ -24,8 +24,7 @@ class LoggingMiddleware(BaseMiddleware):
     Example::
 
         stack = MiddlewareStack()
-        stack.add(RetryMiddleware(max_retries=3))
-        stack.add(LoggingMiddleware())
+        stack.add([RetryMiddleware(max_retries=3), LoggingMiddleware()])
         ordered = stack.resolve()
         # -> [LoggingMiddleware, RetryMiddleware]
 

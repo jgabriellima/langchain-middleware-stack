@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from collections import deque
-from typing import Any
+from typing import Any, Optional
 
 from langchain_middleware_stack.errors import (
     MiddlewareCycleError,
@@ -22,6 +22,16 @@ from langchain_middleware_stack.errors import (
 logger = logging.getLogger(__name__)
 
 __all__ = ["MiddlewareStack"]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _slug_to_node_id(slug: str) -> str:
+    """Convert a slug to a valid Mermaid node identifier (no hyphens)."""
+    return slug.replace("-", "_")
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +74,7 @@ class MiddlewareStack:
         stack = MiddlewareStack()
         stack.add(TimeoutMiddleware(300))
         stack.add(SummarizationEntry(model=m, backend=b))
+        # or: stack.add([TimeoutMiddleware(300), SummarizationEntry(model=m, backend=b)])
         ordered = stack.resolve()
     """
 
@@ -71,8 +82,7 @@ class MiddlewareStack:
         self._entries: list[_Entry] = []
         self._counter = 0
 
-    def add(self, middleware: Any) -> MiddlewareStack:
-        """Add a middleware instance. Returns self for chaining."""
+    def _append_entry(self, middleware: Any) -> None:
         slug = getattr(middleware, "slug", None)
         if slug is None:
             raise MiddlewareResolutionError(
@@ -93,6 +103,26 @@ class MiddlewareStack:
             )
         )
         self._counter += 1
+
+    def add(self, *middlewares: Any) -> MiddlewareStack:
+        """Register one or more middleware instances. Returns self for chaining.
+
+        Forms:
+
+        * ``stack.add(mw)`` — single instance.
+        * ``stack.add(a, b, c)`` — multiple instances (left-to-right registration order).
+        * ``stack.add([a, b, c])`` or ``stack.add((a, b, c))`` — same as three separate adds.
+
+        An empty list/tuple is allowed (no-op).
+        """
+        if not middlewares:
+            raise TypeError("add() requires at least one argument")
+        if len(middlewares) == 1 and isinstance(middlewares[0], (list, tuple)):
+            for mw in middlewares[0]:
+                self._append_entry(mw)
+            return self
+        for mw in middlewares:
+            self._append_entry(mw)
         return self
 
     def resolve(self) -> list[Any]:
@@ -252,6 +282,171 @@ class MiddlewareStack:
             current = next_node
 
         return path + [start] if path else [start]
+
+    # ── Graph visualisation ──────────────────────────────────────────────────
+
+    def draw_mermaid(self, *, include_model_call: bool = True) -> str:
+        """Return a Mermaid ``flowchart LR`` string for the constraint DAG.
+
+        Each registered middleware becomes a node.  Directed edges represent
+        declared ``after`` / ``before`` constraints between slugs that are both
+        present in the stack.  An optional terminal ``model_call`` sink node is
+        appended and wired to the innermost (last resolved) middleware.
+
+        Args:
+            include_model_call: When ``True`` (default) append a
+                ``model_call`` sink node and connect the innermost middleware
+                to it.
+
+        Returns:
+            A Mermaid ``flowchart LR`` string compatible with ``mermaid.js``,
+            ``mermaid.ink``, GitHub Markdown, and Jupyter ``%%mermaid`` magic.
+        """
+        entries = self._entries
+        present_slugs = {e.slug for e in entries}
+
+        lines: list[str] = ["flowchart LR"]
+
+        for e in entries:
+            node_id = _slug_to_node_id(e.slug)
+            class_name = type(e.instance).__name__
+            lines.append(f'    {node_id}["{e.slug}\\n({class_name})"]')
+
+        if include_model_call:
+            lines.append('    model_call(["⚙ model_call"])')
+
+        edges: set[tuple[str, str]] = set()
+        for e in entries:
+            for dep in e.after:
+                if dep in present_slugs:
+                    edges.add((dep, e.slug))
+            for target in e.before:
+                if target in present_slugs:
+                    edges.add((e.slug, target))
+
+        for src, dst in sorted(edges):
+            lines.append(f"    {_slug_to_node_id(src)} --> {_slug_to_node_id(dst)}")
+
+        if include_model_call and entries:
+            try:
+                resolved = self.resolve()
+                if resolved:
+                    innermost = _slug_to_node_id(resolved[-1].slug)
+                    lines.append(f"    {innermost} --> model_call")
+            except Exception:
+                pass
+
+        return "\n".join(lines)
+
+    def draw_mermaid_png(
+        self,
+        *,
+        include_model_call: bool = True,
+        background_color: str = "white",
+        timeout_s: int = 15,
+    ) -> bytes:
+        """Render the middleware DAG as a PNG using a public Mermaid render API.
+
+        Attempts ``mermaid.ink`` first, then falls back to ``kroki.io``.
+        No extra runtime dependencies — only stdlib ``urllib`` and ``base64``
+        are used.  Requires outbound HTTPS access to at least one of these
+        services.
+
+        Args:
+            include_model_call: Forwarded to :meth:`draw_mermaid`.
+            background_color: CSS colour value for the diagram background
+                (e.g. ``"white"``, ``"transparent"``, ``"#f8f8f8"``).
+                Passed to ``mermaid.ink``; ignored by ``kroki.io``.
+            timeout_s: HTTP request timeout in seconds per service attempt.
+
+        Returns:
+            Raw PNG bytes suitable for writing to a file or passing to
+            ``IPython.display.Image(data=...)``.
+
+        Raises:
+            RuntimeError: When all render services fail.
+        """
+        import base64
+        import urllib.parse
+        import urllib.request
+
+        source = self.draw_mermaid(include_model_call=include_model_call)
+
+        errors: list[str] = []
+
+        # ── Attempt 1: mermaid.ink ────────────────────────────────────────────
+        try:
+            encoded = base64.urlsafe_b64encode(source.encode()).decode()
+            bg = urllib.parse.quote(background_color, safe="")
+            url = f"https://mermaid.ink/img/{encoded}?bgColor={bg}"
+            with urllib.request.urlopen(url, timeout=timeout_s) as resp:  # noqa: S310
+                return resp.read()
+        except Exception as exc:
+            errors.append(f"mermaid.ink: {exc}")
+
+        # ── Attempt 2: kroki.io ───────────────────────────────────────────────
+        try:
+            encoded = base64.urlsafe_b64encode(source.encode()).decode().rstrip("=")
+            url = f"https://kroki.io/mermaid/png/{encoded}"
+            with urllib.request.urlopen(url, timeout=timeout_s) as resp:  # noqa: S310
+                return resp.read()
+        except Exception as exc:
+            errors.append(f"kroki.io: {exc}")
+
+        raise RuntimeError(
+            "All Mermaid render services failed:\n"
+            + "\n".join(f"  • {e}" for e in errors)
+            + "\n\nFallback: call stack.draw_mermaid() and paste into "
+            "https://mermaid.live to render offline."
+        )
+
+    def display(
+        self,
+        *,
+        format: str = "auto",
+        include_model_call: bool = True,
+    ) -> Optional[Any]:
+        """Display or return the middleware constraint DAG.
+
+        Mirrors the ``graph.draw_mermaid_png()`` / display pattern from
+        LangGraph so the API feels familiar.
+
+        Behaviour by *format*:
+
+        * ``"auto"`` *(default)* — renders an inline PNG inside a Jupyter /
+          IPython kernel; returns the Mermaid source string in all other
+          environments.
+        * ``"mermaid"`` — always returns the Mermaid source string.
+        * ``"png"`` — always returns raw PNG bytes.
+
+        Args:
+            format: ``"auto"``, ``"mermaid"``, or ``"png"``.
+            include_model_call: Forwarded to the underlying draw methods.
+
+        Returns:
+            ``None`` after inline Jupyter display; ``str`` for ``"mermaid"``
+            or the ``"auto"`` fallback; ``bytes`` for ``"png"``.
+        """
+        if format == "mermaid":
+            return self.draw_mermaid(include_model_call=include_model_call)
+
+        if format == "png":
+            return self.draw_mermaid_png(include_model_call=include_model_call)
+
+        # "auto": attempt inline Jupyter/IPython rendering
+        try:
+            from IPython import get_ipython
+            from IPython.display import Image
+            from IPython.display import display as _ipy_display
+
+            if get_ipython() is not None:
+                png = self.draw_mermaid_png(include_model_call=include_model_call)
+                _ipy_display(Image(data=png))
+                return None
+        except ImportError:
+            pass
+
+        return self.draw_mermaid(include_model_call=include_model_call)
 
     def __len__(self) -> int:
         return len(self._entries)

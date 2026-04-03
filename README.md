@@ -1,27 +1,32 @@
 # langchain-middleware-stack
 
-Declarative middleware ordering for LangChain and agent frameworks — via stable slug-based DAG resolution.
+Declarative middleware ordering for LangChain Deep Agents using stable slug-based DAG resolution.
 
-[![PyPI](https://img.shields.io/pypi/v/langchain-middleware-stack)](https://pypi.org/project/langchain-middleware-stack/)
-[![Python](https://img.shields.io/pypi/pyversions/langchain-middleware-stack)](https://pypi.org/project/langchain-middleware-stack/)
-[![License](https://img.shields.io/pypi/l/langchain-middleware-stack)](LICENSE)
+[PyPI](https://pypi.org/project/langchain-middleware-stack/)
+[Python](https://pypi.org/project/langchain-middleware-stack/)
+[License](LICENSE)
 
 ## Why
 
-Middleware in agent frameworks is typically ordered by insertion position. That fails at scale:
+In LangChain Deep Agents, middleware is a **first-class control layer** over model calls, tools, and state. The framework still composes it as a **positional** `middleware=[...]` list on `create_agent`. In that model, **ordering is semantics**: the first entry is the **outermost** wrapper (for example around `wrap_model_call`), so reordering changes retries, timeouts, logging, and policy in non-obvious ways.
 
-- Position silently shifts as new middleware is added.
-- Integration code must know the exact insertion site.
-- Two middleware packages cannot express mutual ordering without tight coupling.
+The underlying issue is not middleware itself — it is that **composition is positional instead of declarative**. That breaks down in production because:
 
-`langchain-middleware-stack` solves this with four primitives:
+- **Fragility** — Inserting or reordering entries changes behavior; constraints like “after logging, before retry” are not declared on the middleware type.
+- **Poor composability** — Separate teams or packages cannot merge contributions without one owner of the final list and implicit coordination.
+- **Hidden coupling** — Dependencies are expressed as indices, not as explicit, reviewable constraints.
+- **No validated guarantees** — Ordering invariants and dependency relationships are not enforced before runtime.
 
-| Primitive | Role |
-|-----------|------|
-| `slug` | Stable, unique identity for each middleware |
-| `after` / `before` | Self-declared ordering constraints |
-| `MiddlewareStack` | Topological resolver (Kahn's algorithm, stable tie-break) |
-| `wires` | Cross-middleware attribute injection at resolve-time |
+**`langchain-middleware-stack`** addresses this with **constraint-based composition** (DAG + topological sort, stable Kahn tie-break). You declare intent with four primitives:
+
+
+| Primitive          | Role                                                      |
+| ------------------ | --------------------------------------------------------- |
+| `slug`             | Stable, unique identity for each middleware               |
+| `after` / `before` | Self-declared ordering constraints                        |
+| `MiddlewareStack`  | Topological resolver (Kahn's algorithm, stable tie-break) |
+| `wires`            | Cross-middleware attribute injection at resolve-time      |
+
 
 ## Installation
 
@@ -31,6 +36,21 @@ pip install langchain-middleware-stack
 
 Zero runtime dependencies. Python ≥ 3.9.
 
+## Demo notebook
+
+[`notebooks/deep-agents-middleware.ipynb`](notebooks/deep-agents-middleware.ipynb) walks through **baseline vs improved**, both using a **real** [`ChatOpenAI`](https://python.langchain.com/docs/integrations/chat/openai/) model (`OPENAI_API_KEY` required for those cells):
+
+| | |
+| -- | -- |
+| **Baseline** | [`create_agent`](https://reference.langchain.com/python/langchain/agents/create_agent) with a **manually ordered** `middleware=[...]` list. |
+| **Improved** | The same middleware types added to a `MiddlewareStack` in **scrambled** order; `resolve()` produces the LangChain list (**outermost first**), then `create_agent` uses that list. |
+
+**Appendices** at the end: an offline `wrap(handler)` toy stack and optional LangChain `FakeListChatModel` — not the main teaching path.
+
+```bash
+make notebook   # from a dev setup with `make setup`
+```
+
 ## Quick start
 
 ```python
@@ -38,8 +58,8 @@ from langchain_middleware_stack import MiddlewareStack
 from langchain_middleware_stack.middleware import LoggingMiddleware, RetryMiddleware
 
 stack = MiddlewareStack()
-stack.add(RetryMiddleware(max_retries=3))
-stack.add(LoggingMiddleware())
+stack.add([RetryMiddleware(max_retries=3), LoggingMiddleware()])
+# or: stack.add(RetryMiddleware(...)).add(LoggingMiddleware())
 ordered = stack.resolve()
 # -> [LoggingMiddleware, RetryMiddleware]
 # retry.after=("logging",) reordered — every retry is logged
@@ -64,15 +84,24 @@ class TracingMiddleware(BaseMiddleware):
             return await handler(*args, **kwargs)
 ```
 
-`BaseMiddleware` is a mixin — it is fully compatible with LangChain's `AgentMiddleware`:
+`BaseMiddleware` is a mixin — use it **with** LangChain's `AgentMiddleware` when you pass middleware into `create_agent`. Subclasses must implement the agent hooks you need (typically `wrap_model_call`); declare `tools` (often `()`) on the class.
 
 ```python
+from typing import ClassVar
+
 from langchain.agents.middleware import AgentMiddleware
 from langchain_middleware_stack import BaseMiddleware
 
 class MyMiddleware(AgentMiddleware, BaseMiddleware):
     slug: ClassVar[str] = "my-middleware"
+    tools: ClassVar[tuple] = ()
+
+    def wrap_model_call(self, request, handler):
+        # intercept model calls; delegate with handler(request)
+        return handler(request)
 ```
+
+The notebook uses this pattern end-to-end for the baseline and improved scenarios.
 
 ## Cross-middleware wiring
 
@@ -90,13 +119,15 @@ class ConsumerMiddleware(BaseMiddleware):
 
 ## Error reference
 
-| Exception | Raised when |
-|-----------|------------|
-| `MiddlewareResolutionError` | Base class for all stack build errors |
-| `MiddlewareCycleError` | Dependency graph contains a cycle |
-| `MiddlewareDuplicateSlugError` | Two middleware share the same slug |
-| `MiddlewareWiringError` | Cross-middleware wiring fails |
-| `RetryExhaustedError` | `RetryMiddleware` runs out of attempts |
+
+| Exception                      | Raised when                            |
+| ------------------------------ | -------------------------------------- |
+| `MiddlewareResolutionError`    | Base class for all stack build errors  |
+| `MiddlewareCycleError`         | Dependency graph contains a cycle      |
+| `MiddlewareDuplicateSlugError` | Two middleware share the same slug     |
+| `MiddlewareWiringError`        | Cross-middleware wiring fails          |
+| `RetryExhaustedError`          | `RetryMiddleware` runs out of attempts |
+
 
 ## LangChain community PR
 
@@ -105,3 +136,9 @@ This package is the foundation for a proposed contribution to `langchain-ai/lang
 ## License
 
 Apache-2.0
+
+## Author
+
+João Gabriel Lima 
+[joaogabriellima.eng@gmail.com](mailto:joaogabriellima.eng@gmail.com)
+[https://jambu.ai](https://jambu.ai)

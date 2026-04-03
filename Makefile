@@ -1,0 +1,62 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# langchain-middleware-stack — developer Makefile
+#
+# Requires: uv  (https://docs.astral.sh/uv/)
+# Usage:
+#   make setup       create .venv and install all deps
+#   make notebook    launch JupyterLab with the demo notebook
+#   make test        run the test suite
+#   make help        list all targets
+# ─────────────────────────────────────────────────────────────────────────────
+.DEFAULT_GOAL := help
+
+VENV         := .venv
+PYTHON       := $(VENV)/bin/python
+NOTEBOOK     := notebooks/deep-agents-middleware.ipynb
+
+# ── Phony targets ─────────────────────────────────────────────────────────────
+.PHONY: help setup test lint notebook run-notebook clean clean-all
+
+# ── Help ──────────────────────────────────────────────────────────────────────
+help: ## Show this help
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / \
+	    {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+# ── Environment setup ─────────────────────────────────────────────────────────
+setup: ## Create .venv and install package + dev + notebook extras
+	uv venv $(VENV)
+	uv pip install --python $(PYTHON) -e ".[dev,notebook]"
+	@echo ""
+	@echo "  ✓  .venv ready"
+	@echo "  →  activate :  source $(VENV)/bin/activate"
+	@echo "  →  notebook :  make notebook"
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+test: ## Run the full test suite
+	$(PYTHON) -m pytest tests/ -v
+
+# ── Lint ──────────────────────────────────────────────────────────────────────
+lint: ## Run ruff on the package source
+	$(PYTHON) -m ruff check langchain_middleware_stack/
+
+# ── Notebook ──────────────────────────────────────────────────────────────────
+notebook: ## Launch JupyterLab with the demo notebook
+	$(VENV)/bin/jupyter lab $(NOTEBOOK)
+
+run-notebook: ## Execute the notebook in-place without a browser (CI-safe)
+	$(VENV)/bin/jupyter nbconvert \
+	    --to notebook \
+	    --execute \
+	    --inplace \
+	    --ExecutePreprocessor.timeout=120 \
+	    $(NOTEBOOK)
+	@echo "  ✓  $(NOTEBOOK) executed and saved in place"
+
+# ── Clean ─────────────────────────────────────────────────────────────────────
+clean: ## Remove build artefacts (keeps .venv)
+	rm -rf dist/ build/ *.egg-info langchain_middleware_stack.egg-info
+	find . -path "./.venv" -prune -o -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	find . -path "./.venv" -prune -o -name "*.pyc"       -exec rm -f  {} + 2>/dev/null || true
+
+clean-all: clean ## Remove .venv and all build artefacts
+	rm -rf $(VENV)

@@ -11,8 +11,7 @@ Example::
     from langchain_middleware_stack.middleware import LoggingMiddleware, RetryMiddleware
 
     stack = MiddlewareStack()
-    stack.add(RetryMiddleware(max_retries=3))
-    stack.add(LoggingMiddleware())
+    stack.add([RetryMiddleware(max_retries=3), LoggingMiddleware()])
     ordered = stack.resolve()
     # -> [LoggingMiddleware, RetryMiddleware]
     # retry.after=("logging",) reordered — every retry attempt is logged
