@@ -42,7 +42,7 @@ A minimal `middleware/` module in `langchain_community` with:
 The full implementation is published as [`langchain-middleware-stack`](https://pypi.org/project/langchain-middleware-stack/) on PyPI.
 
 - Zero runtime dependencies
-- 46 tests, all passing
+- 50 tests, all passing
 - Apache-2.0 license
 
 The PR would vendor only the resolver (~230 LOC: `MiddlewareStack`, `_Entry`, error classes) if maintainers prefer no new external dependency.

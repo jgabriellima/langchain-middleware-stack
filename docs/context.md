@@ -1,85 +1,32 @@
 # Middleware in Deep Agents (LangChain)
 
-## What Middleware Actually Is
+## What middleware is here
 
-In the context of LangChain Deep Agents, middleware is not just a convenience abstraction — it is a **first-class control layer over agent execution**.
+In LangChain Deep Agents, middleware is the **control layer** around the runtime: small, composable hooks that sit around model calls, tools, and state updates. You use them to intercept execution, adjust inputs and outputs, and observe what happened—without rewriting the core agent loop each time.
 
-Middleware operates as a composable interception system around the agent runtime, enabling structured control over:
+Typical responsibilities include:
 
-- Model invocation (`wrap_model_call`)
+- Model calls (`wrap_model_call`)
 - Tool execution
-- Message transformation
-- State evolution
-- Error handling and retries
-- Observability and tracing
+- Messages and agent state
+- Errors, retries, and fallbacks
+- Telemetry and tracing
 
-Each middleware acts as a **layer in a controlled execution pipeline**, wrapping core operations and influencing behavior before, during, and after execution.
-
-Conceptually, this is equivalent to:
-
-- HTTP middleware in web frameworks (Express, FastAPI)
-- Interceptors in distributed systems
-- Kernel-space hooks in operating systems
-
-In Deep Agents, middleware becomes the **primary mechanism for runtime governance and dynamic behavior injection**.
+Think of the list you pass to the framework as a **stack of wrappers**. The first entry is the outermost shell: it sees traffic first on the way in and last on the way out. The last entry hugs the actual runtime. That geometry is what makes ordering meaningful, not arbitrary.
 
 ---
 
-## Why Middleware Is Critical in Deep Agent Architectures
+## Why it matters
 
-Middleware is the foundation for **context engineering at runtime**.
+Most “agent behavior” that varies by tenant, environment, or policy does not belong only in a static system prompt. Middleware is where **runtime context engineering** lives: you can branch on context, attach tools conditionally, enforce budgets, strip or redact data, and write to memory—all in one coherent pipeline.
 
-Instead of statically defining agent behavior, middleware enables:
-
-### 1. Dynamic Prompt Engineering
-- Inject system prompts conditionally
-- Modify inputs based on context (user, memory, environment)
-- Enforce formatting or safety constraints
-
-### 2. Tool Orchestration
-- Inject tools dynamically
-- Restrict tool usage based on policies
-- Route tool calls through validation or transformation layers
-
-### 3. Execution Control
-- Retries, timeouts, rate limits
-- Budget enforcement (tokens, cost, latency)
-- Circuit breakers and fallbacks
-
-### 4. Observability and Tracing
-- Logging execution steps
-- Capturing intermediate reasoning
-- Building structured traces for evaluation (e.g. Langfuse, DeepEval)
-
-### 5. Memory and State Evolution
-- Read/write to memory systems
-- Transform outputs into persistent knowledge artifacts
-- Enable long-term learning across runs
-
-### 6. Governance and Safety
-- PII filtering
-- Policy enforcement
-- Risk evaluation before action execution
-
-This transforms middleware into a **governed execution fabric**, not just a utility layer.
+So a Deep Agent is not fully described by model plus tools alone. It is described by those pieces **and** by the middleware that governs how they are invoked, wrapped, and observed.
 
 ---
 
-## Key Insight
+## LangChain today: positional lists
 
-A Deep Agent is not defined only by:
-- its model
-- its tools
-
-It is defined by:
-
-> **the middleware stack that governs how those components are used**
-
----
-
-## The Problem: Positional Middleware in LangChain
-
-LangChain currently defines middleware as a **positional list**:
+Today, `create_agent` accepts middleware as a plain ordered list:
 
 ```python
 agent = create_agent(
@@ -89,101 +36,35 @@ agent = create_agent(
 )
 ```
 
-This introduces a critical limitation:
-
-### Ordering = Semantics
-
-Middleware composition follows a wrapping model:
+Under the hood that becomes nested wrapping, conceptually:
 
 ```
 mw1(mw2(mw3(core)))
 ```
 
-Meaning:
-
-* The **first middleware is the outermost layer**
-* The **last middleware is closest to execution**
-
-This makes ordering **semantically significant**, not cosmetic.
+So the rules are simple but strict: the **first** list element is the **outermost** middleware; the **last** is **innermost**, closest to the model and tools. Swapping two entries is not a style preference—it changes semantics. A timeout wrapped outside a retry limits total wall clock time; the same timeout placed inside limits each attempt. Same primitives, different contract.
 
 ---
 
-## Why This Becomes a Problem
+## Where positional lists hurt
 
-### 1. Fragility
+Positional ordering works for a single author and a short stack. It scales poorly when several teams or packages contribute middleware.
 
-Changing order changes behavior:
-
-* Timeout outside retry → global timeout
-* Timeout inside retry → per-attempt timeout
-
-These are fundamentally different execution semantics.
+Reordering silently breaks invariants someone else relied on. There is no first-class way to say “this must run after logging but before retry” except documentation and discipline. Dependencies show up as **magic indices** instead of named relationships, and nothing in the API validates that your order forms a consistent DAG or that required neighbors exist—mistakes surface as subtle runtime behavior.
 
 ---
 
-### 2. Poor Composability Across Teams
+## Declarative composition: `MiddlewareStack`
 
-Multiple teams or packages cannot safely contribute middleware:
+`MiddlewareStack` keeps the same LangChain surface (you still end with one ordered list), but **how** that order is produced is constraint-driven instead of hand-sorted.
 
-* One team defines retry
-* Another defines logging
-* Another defines caching
+Each middleware declares:
 
-There is no way to express:
+- `slug` — stable name used in constraints
+- `after` — every slug listed here must appear **earlier** in the resolved list than this one. Earlier index means **farther out** in LangChain’s wrap chain (outer middleware).
+- `before` — every slug listed here must appear **later** (closer to the core, **inner**).
 
-> "This middleware must run after X but before Y"
-
-Without:
-
-* shared coordination
-* implicit agreements
-* brittle documentation
-
----
-
-### 3. Hidden Coupling
-
-Middleware becomes implicitly coupled via index position.
-
-This creates:
-
-* non-obvious dependencies
-* hard-to-debug execution issues
-* fragile refactoring
-
----
-
-### 4. No Declarative Guarantees
-
-There is no way to enforce:
-
-* ordering constraints
-* dependency relationships
-* execution invariants
-
----
-
-## The Real Limitation
-
-The issue is not middleware itself.
-
-The issue is:
-
-> **middleware composition is positional instead of declarative**
-
----
-
-## The Solution: Middleware Stack (Constraint-Based Composition)
-
-To address this, we introduce a **declarative middleware composition model** via `MiddlewareStack`.
-
-Instead of relying on position, each middleware defines:
-
-* `slug`: unique identifier
-* `after`: must run after these middleware
-* `before`: must run before these middleware
-
-Example:
+Examples:
 
 ```python
 class CacheMiddleware(BaseMiddleware):
@@ -198,14 +79,12 @@ class RateLimitMiddleware(BaseMiddleware):
     before = ("retry",)
 ```
 
----
+You register instances in any convenient order; resolution does the rest:
 
-## How It Works
-
-1. All middleware are added in any order
-2. A constraint graph (DAG) is built
-3. A **topological sort** resolves execution order
-4. Output is a valid LangChain-compatible ordered list
+1. Collect all entries and their slugs.
+2. Build a directed graph from `after` / `before`.
+3. Run a topological sort (this codebase uses a stable Kahn variant tied to registration order when the DAG allows ties).
+4. Return a single list you can pass straight into `create_agent`.
 
 ```python
 stack = MiddlewareStack()
@@ -215,105 +94,41 @@ stack.add(...)
 ordered = stack.resolve()
 ```
 
----
-
-## What This Unlocks
-
-### 1. True Composability
-
-Independent modules can define middleware safely.
-
-No coordination required.
+If the constraints contradict each other, resolution fails at build time rather than in production traffic.
 
 ---
 
-### 2. Deterministic Behavior
+## What you gain
 
-Execution order is:
+Independent packages can publish middleware that only knows its **neighbors by slug**, not its absolute slot in someone else’s list. The resolved order is reproducible: same stack definition yields the same list, and invalid graphs (cycles, impossible ordering) are rejected when you call `resolve()`.
 
-* explicit
-* validated
-* reproducible
+Adding a new layer stops being “insert at index 2 and hope.” It becomes “declare `after` / `before` and let the resolver prove the stack is consistent.” That is the difference between tribal knowledge and an enforceable contract—especially when policy, security, and cost controls are modeled as separate middleware.
 
 ---
 
-### 3. Safer Extensions
+## Mental model
 
-New middleware can be added without breaking existing semantics.
-
----
-
-### 4. Governance at Scale
-
-Enables building:
-
-* policy layers
-* security layers
-* cost control layers
-
-As independent, reusable modules.
+Hand-maintained lists train you to think in terms of “slot 0, slot 1.” The stack model trains you to think in **edges**: who must wrap whom. The resolver’s job is to turn that graph into exactly one linear order LangChain understands. Once you internalize that, cross-team composition stops feeling like a merge conflict in a Python list.
 
 ---
 
-### 5. Alignment with System Design Principles
+## Positional list vs stack
 
-This approach mirrors:
-
-* dependency injection systems
-* build systems (e.g. Bazel DAGs)
-* OS-level scheduling constraints
-
----
-
-## Mental Model Upgrade
-
-Stop thinking:
-
-> "middleware is a list"
-
-Start thinking:
-
-> "middleware is a dependency graph governing agent execution"
+| Aspect              | Positional list        | MiddlewareStack              |
+| ------------------- | ----------------------- | ---------------------------- |
+| Composition         | You pick every index    | You declare constraints      |
+| Cross-team use      | Shared rules and docs   | Slugs and explicit edges     |
+| Refactor safety     | Easy to break silently  | Resolver validates ordering  |
+| Ordering guarantees | None from the API       | DAG + topological resolution |
 
 ---
 
-## Transition Summary
+## Notebook scope
 
-| Aspect                | Positional Middleware | Middleware Stack |
-| --------------------- | --------------------- | ---------------- |
-| Composition           | Manual ordering       | Declarative DAG  |
-| Safety                | Low                   | High             |
-| Extensibility         | Fragile               | Robust           |
-| Team Collaboration    | Hard                  | Native           |
-| Observability Control | Limited               | Structured       |
+The companion notebook walks through the same ideas in code: positional middleware in LangChain, concrete cases where reordering changes behavior, then `MiddlewareStack` from this package—DAG construction, resolution, and feeding the result into `create_agent`. It also touches advanced pieces such as `wires`, sharing data across middleware, and lining execution up with tracing where the implementation supports it.
 
 ---
 
-## What This Notebook Demonstrates
+## Summary
 
-This notebook will:
-
-1. Show how positional middleware works in LangChain
-2. Demonstrate how ordering impacts execution semantics
-3. Highlight real failure cases caused by ordering
-4. Introduce `MiddlewareStack`
-5. Show constraint-based resolution via DAG
-6. Demonstrate advanced features like:
-
-   * dependency wiring (`wires`)
-   * cross-middleware data sharing
-   * execution tracing alignment
-
----
-
-## Final Takeaway
-
-Middleware is not an implementation detail.
-
-It is:
-
-> **the control plane of Deep Agent execution**
-
-And moving from positional lists to declarative stacks is:
-
-> **a necessary step toward production-grade agent systems**
+Middleware is effectively the **control plane** of a Deep Agent: the place execution policy and observability attach. Moving from a raw positional list to a declarative stack does not change LangChain’s execution model; it changes **who is allowed to be wrong about order**—ideally nobody, because the graph either resolves cleanly or fails before you ship.

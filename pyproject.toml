@@ -19,6 +19,11 @@ classifiers = [
 ]
 dependencies = []
 
+[project.urls]
+Homepage = "https://pypi.org/project/langchain-middleware-stack/"
+# Documentation = "https://<org>.github.io/langchain-middleware-stack/"
+# Repository = "https://github.com/<org>/langchain-middleware-stack"
+
 [project.optional-dependencies]
 langchain = ["langchain-core>=0.3"]
 yaml = ["PyYAML>=6.0"]

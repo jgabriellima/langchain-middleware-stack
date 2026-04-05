@@ -1,3 +1,6 @@
+# local strategy / launch notes (not part of the public OSS tree)
+docs-private/
+
 # secrets — never commit
 .env
 .env.local
@@ -15,6 +18,9 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# superpowers brainstorm sessions (local mockups)
+.superpowers/
 
 # tooling caches
 .pytest_cache/

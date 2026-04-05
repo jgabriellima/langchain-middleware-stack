@@ -2,9 +2,11 @@
 
 Declarative middleware ordering for LangChain Deep Agents using stable slug-based DAG resolution.
 
-[PyPI](https://pypi.org/project/langchain-middleware-stack/)
-[Python](https://pypi.org/project/langchain-middleware-stack/)
-[License](LICENSE)
+[PyPI](https://pypi.org/project/langchain-middleware-stack/) · [License](LICENSE)
+
+**Docs:** [Technical context](docs/context.md) · [Community PR issue draft](docs/github-issue-langchain-community.md)
+
+After you enable **GitHub Pages** from the `/docs` folder, add your site URL to `docs/index.html` (repository link) and to `pyproject.toml` under `[project.urls]`.
 
 ## Why
 

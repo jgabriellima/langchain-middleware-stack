@@ -5,6 +5,7 @@
 # Usage:
 #   make setup       create .venv and install all deps
 #   make notebook    launch JupyterLab with the demo notebook
+#   make landing     serve docs/ (GitHub Pages preview) on localhost
 #   make test        run the test suite
 #   make help        list all targets
 # ─────────────────────────────────────────────────────────────────────────────
@@ -13,9 +14,10 @@
 VENV         := .venv
 PYTHON       := $(VENV)/bin/python
 NOTEBOOK     := notebooks/deep-agents-middleware.ipynb
+LANDING_PORT ?= 8765
 
 # ── Phony targets ─────────────────────────────────────────────────────────────
-.PHONY: help setup test lint notebook run-notebook clean clean-all
+.PHONY: help setup test lint notebook landing run-notebook clean clean-all
 
 # ── Help ──────────────────────────────────────────────────────────────────────
 help: ## Show this help
@@ -42,6 +44,10 @@ lint: ## Run ruff on the package source
 # ── Notebook ──────────────────────────────────────────────────────────────────
 notebook: ## Launch JupyterLab with the demo notebook
 	$(VENV)/bin/jupyter lab $(NOTEBOOK)
+
+landing: ## Serve docs/ landing at http://127.0.0.1:8765/ (LANDING_PORT=8080 make landing)
+	@echo "  →  http://127.0.0.1:$(LANDING_PORT)/  (Ctrl+C to stop)"
+	cd docs && python3 -m http.server $(LANDING_PORT)
 
 run-notebook: ## Execute the notebook in-place without a browser (CI-safe)
 	$(VENV)/bin/jupyter nbconvert \
