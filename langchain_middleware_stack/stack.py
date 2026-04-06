@@ -413,9 +413,11 @@ class MiddlewareStack:
 
         Behaviour by *format*:
 
-        * ``"auto"`` *(default)* — renders an inline PNG inside a Jupyter /
-          IPython kernel; returns the Mermaid source string in all other
-          environments.
+        * ``"auto"`` *(default)* — in Jupyter / IPython, renders a PNG via
+          :meth:`draw_mermaid_png`, or if that fails (no kernel network), an
+          ``<img>`` to the same mermaid.ink URL so the browser can load it
+          (frontends often strip ``<script>``-based Mermaid).  Outside IPython,
+          returns the Mermaid source string.
         * ``"mermaid"`` — always returns the Mermaid source string.
         * ``"png"`` — always returns raw PNG bytes.
 
@@ -435,14 +437,40 @@ class MiddlewareStack:
 
         # "auto": attempt inline Jupyter/IPython rendering
         try:
+            import base64
+            import urllib.parse
+
             from IPython import get_ipython
-            from IPython.display import Image
+            from IPython.display import HTML, Image
             from IPython.display import display as _ipy_display
 
             if get_ipython() is not None:
-                png = self.draw_mermaid_png(include_model_call=include_model_call)
-                _ipy_display(Image(data=png))
-                return None
+                try:
+                    png = self.draw_mermaid_png(
+                        include_model_call=include_model_call,
+                    )
+                    _ipy_display(Image(data=png))
+                    return None
+                except RuntimeError:
+                    # Many Jupyter frontends strip or ignore <script>, so a
+                    # mermaid.js HTML fallback shows raw source.  Ask the
+                    # browser to load the same PNG URL instead (may work when
+                    # the kernel cannot reach mermaid.ink but the UI can).
+                    src = self.draw_mermaid(include_model_call=include_model_call)
+                    encoded = base64.urlsafe_b64encode(src.encode()).decode()
+                    bg = urllib.parse.quote("white", safe="")
+                    url = f"https://mermaid.ink/img/{encoded}?bgColor={bg}"
+                    _ipy_display(
+                        HTML(
+                            "<p style=\"color:#666;font-size:0.9em\">"
+                            "Diagram via browser (mermaid.ink). "
+                            "If this image fails, paste <code>draw_mermaid()</code> "
+                            "output into <a href=\"https://mermaid.live\">mermaid.live</a>."
+                            "</p>"
+                            f'<img src="{url}" alt="Middleware constraint graph" />'
+                        )
+                    )
+                    return None
         except ImportError:
             pass
 

@@ -42,12 +42,13 @@ lint: ## Run ruff on the package source
 	$(PYTHON) -m ruff check langchain_middleware_stack/
 
 # ── Notebook ──────────────────────────────────────────────────────────────────
-notebook: ## Launch JupyterLab with the demo notebook
-	$(VENV)/bin/jupyter lab $(NOTEBOOK)
+# JupyterLab blocks `../` in Markdown image URLs. Symlink docs images under notebooks/
+# so paths stay inside the notebook directory (see notebooks/docs_assets_images).
+notebooks/docs_assets_images:
+	@cd notebooks && ln -sfn ../docs/assets/images docs_assets_images
 
-landing: ## Serve docs/ landing at http://127.0.0.1:8765/ (LANDING_PORT=8080 make landing)
-	@echo "  →  http://127.0.0.1:$(LANDING_PORT)/  (Ctrl+C to stop)"
-	cd docs && python3 -m http.server $(LANDING_PORT)
+notebook: notebooks/docs_assets_images ## Launch JupyterLab with the demo notebook
+	$(VENV)/bin/jupyter lab $(NOTEBOOK)
 
 run-notebook: ## Execute the notebook in-place without a browser (CI-safe)
 	$(VENV)/bin/jupyter nbconvert \

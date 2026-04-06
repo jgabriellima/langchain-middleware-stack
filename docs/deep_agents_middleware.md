@@ -126,9 +126,3 @@ Hand-maintained lists train you to think in terms of “slot 0, slot 1.” The s
 ## Notebook scope
 
 The companion notebook walks through the same ideas in code: positional middleware in LangChain, concrete cases where reordering changes behavior, then `MiddlewareStack` from this package—DAG construction, resolution, and feeding the result into `create_agent`. It also touches advanced pieces such as `wires`, sharing data across middleware, and lining execution up with tracing where the implementation supports it.
-
----
-
-## Summary
-
-Middleware is effectively the **control plane** of a Deep Agent: the place execution policy and observability attach. Moving from a raw positional list to a declarative stack does not change LangChain’s execution model; it changes **who is allowed to be wrong about order**—ideally nobody, because the graph either resolves cleanly or fails before you ship.

@@ -26,3 +26,6 @@ build/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+
+.created_images*
+.ipynb_checkpoints/

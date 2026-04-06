@@ -1,10 +1,14 @@
 # langchain-middleware-stack
 
-Declarative middleware ordering for LangChain Deep Agents using stable slug-based DAG resolution.
+<p align="center">
+  <img src="./docs/assets/images/banner.png" alt="langchain-middleware-stack banner" width="100%" />
+</p>
+
+**Declarative middleware ordering for LangChain Deep Agents** using stable slug-based DAG resolution.
 
 [PyPI](https://pypi.org/project/langchain-middleware-stack/) · [License](LICENSE)
 
-**Docs:** [Technical context](docs/context.md) · [Community PR issue draft](docs/github-issue-langchain-community.md)
+**Docs:** [Deep Agents middleware](docs/deep_agents_middleware.md) · [Community issue draft](docs/github-issue-langchain-community.md)
 
 After you enable **GitHub Pages** from the `/docs` folder, add your site URL to `docs/index.html` (repository link) and to `pyproject.toml` under `[project.urls]`.
 
@@ -19,7 +23,7 @@ The underlying issue is not middleware itself — it is that **composition is po
 - **Hidden coupling** — Dependencies are expressed as indices, not as explicit, reviewable constraints.
 - **No validated guarantees** — Ordering invariants and dependency relationships are not enforced before runtime.
 
-**`langchain-middleware-stack`** addresses this with **constraint-based composition** (DAG + topological sort, stable Kahn tie-break). You declare intent with four primitives:
+`**langchain-middleware-stack`** addresses this with **constraint-based composition** (DAG + topological sort, stable Kahn tie-break). You declare intent with four primitives:
 
 
 | Primitive          | Role                                                      |
@@ -40,12 +44,14 @@ Zero runtime dependencies. Python ≥ 3.9.
 
 ## Demo notebook
 
-[`notebooks/deep-agents-middleware.ipynb`](notebooks/deep-agents-middleware.ipynb) walks through **baseline vs improved**, both using a **real** [`ChatOpenAI`](https://python.langchain.com/docs/integrations/chat/openai/) model (`OPENAI_API_KEY` required for those cells):
+`[notebooks/deep-agents-middleware.ipynb](notebooks/deep-agents-middleware.ipynb)` walks through **baseline vs improved**, both using a **real** `[ChatOpenAI](https://python.langchain.com/docs/integrations/chat/openai/)` model (`OPENAI_API_KEY` required for those cells):
 
-| | |
-| -- | -- |
-| **Baseline** | [`create_agent`](https://reference.langchain.com/python/langchain/agents/create_agent) with a **manually ordered** `middleware=[...]` list. |
+
+|              |                                                                                                                                                                                   |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Baseline** | `[create_agent](https://reference.langchain.com/python/langchain/agents/create_agent)` with a **manually ordered** `middleware=[...]` list.                                       |
 | **Improved** | The same middleware types added to a `MiddlewareStack` in **scrambled** order; `resolve()` produces the LangChain list (**outermost first**), then `create_agent` uses that list. |
+
 
 **Appendices** at the end: an offline `wrap(handler)` toy stack and optional LangChain `FakeListChatModel` — not the main teaching path.
 
@@ -131,9 +137,16 @@ class ConsumerMiddleware(BaseMiddleware):
 | `RetryExhaustedError`          | `RetryMiddleware` runs out of attempts |
 
 
-## LangChain community PR
+## LangChain upstream and community PRs
 
-This package is the foundation for a proposed contribution to `langchain-ai/langchain` ([tracking issue](https://github.com/langchain-ai/langchain/issues)). The goal is a minimal middleware abstraction in `langchain_community/middleware/` that any LangChain chain can adopt.
+Relevant work in `langchain-ai/langchain` (not an exhaustive list):
+
+| PR | Status | Topic |
+| ---- | ------ | ----- |
+| [#32828](https://github.com/langchain-ai/langchain/pull/32828) | merged | `AgentMiddleware` and `middleware=` on `create_agent` |
+| [#34514](https://github.com/langchain-ai/langchain/pull/34514) | open | declarative **depends-on** between middleware and topological ordering |
+
+This package is a standalone resolver you can use with the current harness; how much overlaps with [#34514](https://github.com/langchain-ai/langchain/pull/34514) if it merges is an integration detail for later. A maintainer-facing draft lives in [docs/github-issue-langchain-community.md](docs/github-issue-langchain-community.md) (fill before opening a tracking issue).
 
 ## License
 
@@ -141,6 +154,4 @@ Apache-2.0
 
 ## Author
 
-João Gabriel Lima 
-[joaogabriellima.eng@gmail.com](mailto:joaogabriellima.eng@gmail.com)
-[https://jambu.ai](https://jambu.ai)
+**João Gabriel Lima** — [LinkedIn](https://www.linkedin.com/in/joaogabriellima) · [joaogabriellima.eng@gmail.com](mailto:joaogabriellima.eng@gmail.com) · [jambu.ai](https://jambu.ai)
