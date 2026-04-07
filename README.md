@@ -8,10 +8,6 @@
 
 [PyPI](https://pypi.org/project/langchain-middleware-stack/) · [License](LICENSE)
 
-**Docs:** [Deep Agents middleware](docs/deep_agents_middleware.md) · [Community issue draft](docs/github-issue-langchain-community.md)
-
-After you enable **GitHub Pages** from the `/docs` folder, add your site URL to `docs/index.html` (repository link) and to `pyproject.toml` under `[project.urls]`.
-
 ## Why
 
 In LangChain Deep Agents, middleware is a **first-class control layer** over model calls, tools, and state. The framework still composes it as a **positional** `middleware=[...]` list on `create_agent`. In that model, **ordering is semantics**: the first entry is the **outermost** wrapper (for example around `wrap_model_call`), so reordering changes retries, timeouts, logging, and policy in non-obvious ways.
