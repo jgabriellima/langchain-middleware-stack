@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -232,56 +233,67 @@ def main() -> None:
     require_tools(skip_pypi, skip_gh)
 
     tag_name = f"v{new_version}"
-    notes_path = ROOT / ".release_notes_tmp.md"
-    notes_path.write_text(notes, encoding="utf-8")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix=".md",
+        delete=False,
+        prefix="release_notes_",
+    ) as tmp:
+        tmp.write(notes)
+        tmp.flush()
+        notes_path = Path(tmp.name)
 
-    if new_version != current:
-        write_pyproject_version(new_version)
-        print(f"  Updated {PYPROJECT.name} -> version = {new_version!r}")
+    try:
+        if new_version != current:
+            write_pyproject_version(new_version)
+            print(f"  Updated {PYPROJECT.name} -> version = {new_version!r}")
 
-    msg = f"chore: release {new_version}"
-    subprocess.run(["git", "add", "pyproject.toml"], cwd=ROOT, check=True)
-    st = run_out(["git", "status", "--porcelain"])
-    if st:
-        subprocess.run(["git", "commit", "-m", msg], cwd=ROOT, check=True)
-    else:
-        print("  No pyproject version change to commit (already at release version).")
+        msg = f"chore: release {new_version}"
+        subprocess.run(["git", "add", "pyproject.toml"], cwd=ROOT, check=True)
+        staged = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"],
+            cwd=ROOT,
+        )
+        if staged.returncode != 0:
+            subprocess.run(["git", "commit", "-m", msg], cwd=ROOT, check=True)
+        else:
+            print("  No pyproject version change to commit (already at release version).")
 
-    existing = run_out(["git", "tag", "-l", tag_name])
-    if existing == tag_name:
-        print(f"  Tag {tag_name} already exists locally; skipping git tag.")
-    else:
-        subprocess.run(["git", "tag", "-a", tag_name, "-m", msg], cwd=ROOT, check=True)
+        existing = run_out(["git", "tag", "-l", tag_name])
+        if existing == tag_name:
+            print(f"  Tag {tag_name} already exists locally; skipping git tag.")
+        else:
+            subprocess.run(["git", "tag", "-a", tag_name, "-m", msg], cwd=ROOT, check=True)
 
-    if not skip_tests:
-        print("  Running pytest…")
+        if not skip_tests:
+            print("  Running pytest…")
+            subprocess.run(
+                [sys.executable, "-m", "pytest", "tests/", "-q"],
+                cwd=ROOT,
+                check=True,
+            )
+
+        dist = ROOT / "dist"
+        if dist.exists():
+            shutil.rmtree(dist)
+
+        print("  python -m build")
+        subprocess.run([sys.executable, "-m", "build"], cwd=ROOT, check=True)
+
+        def dist_release_files() -> list[Path]:
+            return sorted(dist.glob("*.tar.gz")) + sorted(dist.glob("*.whl"))
+
+        artifacts = dist_release_files()
+        if not artifacts:
+            die("build produced no wheel/sdist under dist/")
+        print("  twine check …")
         subprocess.run(
-            [sys.executable, "-m", "pytest", "tests/", "-q"],
+            [sys.executable, "-m", "twine", "check", *[str(p) for p in artifacts]],
             cwd=ROOT,
             check=True,
         )
 
-    dist = ROOT / "dist"
-    if dist.exists():
-        shutil.rmtree(dist)
-
-    print("  python -m build")
-    subprocess.run([sys.executable, "-m", "build"], cwd=ROOT, check=True)
-
-    def dist_release_files() -> list[Path]:
-        return sorted(dist.glob("*.tar.gz")) + sorted(dist.glob("*.whl"))
-
-    artifacts = dist_release_files()
-    if not artifacts:
-        die("build produced no wheel/sdist under dist/")
-    print("  twine check …")
-    subprocess.run(
-        [sys.executable, "-m", "twine", "check", *[str(p) for p in artifacts]],
-        cwd=ROOT,
-        check=True,
-    )
-
-    try:
         print("  git push origin HEAD")
         subprocess.run(["git", "push", "origin", "HEAD"], cwd=ROOT, check=True)
         print(f"  git push origin {tag_name}")
@@ -312,10 +324,10 @@ def main() -> None:
             subprocess.run(cmd, cwd=ROOT, check=True)
         else:
             print("  SKIP_GH=1: skipping GitHub release.")
+
+        print(f"\n  Done. Released {new_version} ({tag_name}).")
     finally:
         notes_path.unlink(missing_ok=True)
-
-    print(f"\n  Done. Released {new_version} ({tag_name}).")
 
 
 if __name__ == "__main__":
