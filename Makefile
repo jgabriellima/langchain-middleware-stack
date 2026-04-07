@@ -7,6 +7,8 @@
 #   make notebook    launch JupyterLab with the demo notebook
 #   make landing     serve docs/ (GitHub Pages preview) on localhost
 #   make test        run the test suite
+#   make publish-dry preview release (changelog + semver)
+#   make publish     full PyPI + GitHub release (needs CONFIRM=yes)
 #   make help        list all targets
 # ─────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
@@ -17,7 +19,7 @@ NOTEBOOK     := notebooks/deep-agents-middleware.ipynb
 LANDING_PORT ?= 8765
 
 # ── Phony targets ─────────────────────────────────────────────────────────────
-.PHONY: help setup test lint notebook landing run-notebook clean clean-all
+.PHONY: help setup test lint notebook landing run-notebook clean clean-all publish publish-dry
 
 # ── Help ──────────────────────────────────────────────────────────────────────
 help: ## Show this help
@@ -58,6 +60,18 @@ run-notebook: ## Execute the notebook in-place without a browser (CI-safe)
 	    --ExecutePreprocessor.timeout=120 \
 	    $(NOTEBOOK)
 	@echo "  ✓  $(NOTEBOOK) executed and saved in place"
+
+# ── Release / PyPI ───────────────────────────────────────────────────────────
+# Requires: .venv + .[dev], git, gh (unless SKIP_GH=1), PyPI creds for twine (unless SKIP_PYPI=1).
+# Preview:  make publish-dry
+# Ship:     make publish CONFIRM=yes [BUMP=auto|major|minor|patch|none]
+publish-dry: ## Preview changelog + semver bump (DRY_RUN=1; no git/PyPI/GitHub)
+	@test -x $(PYTHON) || (echo "Run make setup first."; exit 1)
+	@DRY_RUN=1 $(PYTHON) scripts/release_publish.py
+
+publish: ## Bump version, test, build, twine check, push, PyPI, GitHub (needs CONFIRM=yes)
+	@test -x $(PYTHON) || (echo "Run make setup first."; exit 1)
+	@CONFIRM=$(CONFIRM) BUMP=$(BUMP) SKIP_TESTS=$(SKIP_TESTS) SKIP_PYPI=$(SKIP_PYPI) SKIP_GH=$(SKIP_GH) $(PYTHON) scripts/release_publish.py
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 clean: ## Remove build artefacts (keeps .venv)
