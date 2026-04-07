@@ -137,14 +137,15 @@ class ConsumerMiddleware(BaseMiddleware):
 | `RetryExhaustedError`          | `RetryMiddleware` runs out of attempts |
 
 
-## LangChain upstream and community PRs
+## LangChain upstream and related initiatives
 
-Relevant work in `langchain-ai/langchain` (not an exhaustive list):
+Pointers to **declarative ordering and composition** for agent middleware—the same problem this package targets (not exhaustive):
 
-| PR | Status | Topic |
-| ---- | ------ | ----- |
-| [#32828](https://github.com/langchain-ai/langchain/pull/32828) | merged | `AgentMiddleware` and `middleware=` on `create_agent` |
-| [#34514](https://github.com/langchain-ai/langchain/pull/34514) | open | declarative **depends-on** between middleware and topological ordering |
+| Link | Kind | Topic |
+| ---- | ---- | ----- |
+| [#33885](https://github.com/langchain-ai/langchain/issues/33885) | issue (`langchain-ai/langchain`) | Middleware declaring dependencies; tracked as a possible 1.x evolution |
+| [#2126](https://github.com/langchain-ai/deepagents/issues/2126) | issue (`langchain-ai/deepagents`) | Less rigid middleware composition at the Deep Agents entry point |
+| [#34514](https://github.com/langchain-ai/langchain/pull/34514) | PR (`langchain-ai/langchain`, open) | `depends_on` on middleware classes and topological ordering **inside** `create_agent` |
 
 This package is a standalone resolver you can use with the current harness; how much overlaps with [#34514](https://github.com/langchain-ai/langchain/pull/34514) if it merges is an integration detail for later. A maintainer-facing draft lives in [docs/github-issue-langchain-community.md](docs/github-issue-langchain-community.md) (fill before opening a tracking issue).
 
