@@ -14,6 +14,7 @@ Environment:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import re
 import shutil
@@ -145,8 +146,12 @@ def require_tools(skip_pypi: bool, skip_gh: bool) -> None:
     if not shutil.which("git"):
         die("git not found on PATH")
     if not skip_pypi:
-        if not shutil.which("twine"):
-            die("twine not found; install dev extras: uv pip install -e '.[dev]'")
+        # Twine is invoked as `python -m twine`; venvs often have no `twine` on PATH.
+        if importlib.util.find_spec("twine") is None:
+            die(
+                "twine is not importable in this Python; install dev extras: "
+                "uv pip install --python .venv/bin/python -e '.[dev]'"
+            )
     if not skip_gh and os.environ.get("DRY_RUN") != "1":
         if not shutil.which("gh"):
             die("gh CLI not found; install https://cli.github.com/ or set SKIP_GH=1")
