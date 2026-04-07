@@ -1,7 +1,7 @@
 # langchain-middleware-stack
 
 <p align="center">
-  <img src="./docs/assets/images/banner.png" alt="langchain-middleware-stack banner" width="100%" height="90%" />
+  <img src="https://raw.githubusercontent.com/jgabriellima/langchain-middleware-stack/main/docs/assets/images/banner.png" alt="langchain-middleware-stack banner" width="100%" height="90%" />
 </p>
 
 **Declarative middleware ordering for LangChain Deep Agents** using stable slug-based DAG resolution.
